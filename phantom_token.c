@@ -31,6 +31,7 @@ typedef struct
     ngx_array_t *scopes;
     ngx_str_t space_separated_scopes;
     ngx_flag_t enable;
+    ngx_flag_t allow_unauthenticated;
 } phantom_token_configuration_t;
 
 typedef struct
@@ -109,6 +110,14 @@ static ngx_command_t phantom_token_module_directives[] =
           NGX_HTTP_LOC_CONF_OFFSET,
           offsetof(phantom_token_configuration_t, enable),
           NULL
+    },
+    {
+        ngx_string("phantom_token_allow_unauthenticated"),
+        NGX_HTTP_LOC_CONF | NGX_CONF_FLAG,
+        ngx_conf_set_flag_slot,
+        NGX_HTTP_LOC_CONF_OFFSET,
+        offsetof(phantom_token_configuration_t, allow_unauthenticated),
+        NULL
     },
     {
         ngx_string("phantom_token_client_credential"),
@@ -309,12 +318,16 @@ static ngx_int_t handler(ngx_http_request_t *request)
         return NGX_AGAIN;
     }
 
-    // return unauthorized when no Authorization header is present
+    // return unauthorized when no Authorization header is present, unless allow_unauthenticated is set to true
     if (!request->headers_in.authorization || request->headers_in.authorization->value.len <= 0)
     {
         ngx_log_debug0(NGX_LOG_DEBUG_HTTP, request->connection->log, 0, "Authorization header not present");
 
-        return set_www_authenticate_header(request, module_location_config, NULL);
+        if (!module_location_config->allow_unauthenticated)
+        {
+            return set_www_authenticate_header(request, module_location_config, NULL);
+        }
+        return NGX_DECLINED;
     }
 
     u_char *bearer_token_pos;
@@ -721,6 +734,7 @@ static void *create_location_configuration(ngx_conf_t *config)
     }
 
     location_config->enable = NGX_CONF_UNSET_UINT;
+    location_config->allow_unauthenticated = NGX_CONF_UNSET_UINT;
     location_config->scopes = NGX_CONF_UNSET_PTR;
 
     return location_config;
@@ -731,6 +745,7 @@ static char *merge_location_configuration(ngx_conf_t *main_config, void *parent,
     phantom_token_configuration_t *parent_config = parent, *child_config = child;
 
     ngx_conf_merge_off_value(child_config->enable, parent_config->enable, 0)
+    ngx_conf_merge_off_value(child_config->allow_unauthenticated, parent_config->allow_unauthenticated, 0)
     ngx_conf_merge_str_value(child_config->introspection_endpoint, parent_config->introspection_endpoint, "")
     ngx_conf_merge_str_value(child_config->realm, parent_config->realm, "api")
     ngx_conf_merge_ptr_value(child_config->scopes, parent_config->scopes, NULL)

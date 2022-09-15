@@ -325,3 +325,27 @@ content-type: application/json
 
 --- response_body_like chomp
 {"code":"server_error","message":"Problem encountered processing the request"}
+
+=== Test 11: A request with no authorization request header results in success if allow_unauthenticated is set
+
+--- config
+location tt {
+    proxy_pass "http://localhost:8443/oauth/v2/oauth-introspect";
+}
+
+location /t {
+    proxy_pass         "http://localhost:8080/anything";
+
+    phantom_token on;
+    phantom_token_client_credential "test-nginx" "secret2";
+    phantom_token_introspection_endpoint tt;
+    phantom_token_allow_unauthenticated on;
+}
+
+--- error_code: 200
+
+--- request
+GET /t
+
+--- response_body_like chomp
+"url": "http://localhost:8080/anything"
